@@ -6,7 +6,7 @@ require 'phpMQTT.php';    // Gọi thư viện MQTT bạn đã upload
 use Bluerhinos\phpMQTT;   // Sử dụng namespace trong file phpMQTT.php
 
 // Cấu hình HiveMQ Cloud
-$server   = '960ad71ccaee46b19a2886a5c3551ee6.s1.eu.hivemq.cloud';
+$server   = '18597cd464464ab4b3c1c5d4bf9b070e.s1.eu.hivemq.cloud';
 $port     = 8883;
 $username = 'dodanhtoan'; 
 $password = 'Toan0809';
