@@ -1,63 +1,62 @@
 <?php
-set_time_limit(0);
-require 'db.php';         // Kết nối MongoDB
-require 'phpMQTT.php';    // Gọi thư viện MQTT bạn đã upload
+set_time_limit(0); // Chạy mãi mãi
+require 'db.php';
+require 'phpMQTT.php';
 
-use Bluerhinos\phpMQTT;   // Sử dụng namespace trong file phpMQTT.php
+use Bluerhinos\phpMQTT;   
 
-// Cấu hình HiveMQ Cloud
+// --- CẤU HÌNH HIVEMQ ---
 $server   = '18597cd464464ab4b3c1c5d4bf9b070e.s1.eu.hivemq.cloud';
 $port     = 8883;
 $username = 'dodanhtoan'; 
 $password = 'Toan0809';
-$clientId = 'PHP_Worker_Listener_' . uniqid(); // Tạo ID ngẫu nhiên để tránh trùng
-$cafile   = null; // HiveMQ Cloud public thường hỗ trợ kết nối TLS trực tiếp
+$clientId = 'Render_Worker_' . uniqid();
 
+// --- KHẮC PHỤC LỖI KẾT NỐI TẠI ĐÂY ---
+// Trên Render (Linux), file chứng chỉ gốc nằm ở đây
+$cafile = '/etc/ssl/certs/ca-certificates.crt';
+
+// Topic lắng nghe
 $topicStatus = 'esp8266/status'; 
 
-// Khởi tạo class từ file phpMQTT.php
+// Khởi tạo
 $mqtt = new phpMQTT($server, $port, $clientId, $cafile);
 
-// Kết nối (SSL/TLS = true vì HiveMQ dùng port 8883)
-// Hàm connect(clean, will, user, pass)
+// Kết nối (Tham số đầu tiên là clean session = true)
 if(!$mqtt->connect(true, null, $username, $password)) {
-    exit("Không thể kết nối tới MQTT Broker!\n");
+    // Nếu lỗi, in ra log để debug trên Render
+    error_log("MQTT ERROR: Khong the ket noi toi HiveMQ!");
+    exit(1); 
 }
 
-echo "Đang lắng nghe dữ liệu từ topic: $topicStatus ...\n";
+echo "MQTT: Da ket noi thanh cong toi $server\n";
+echo "Dang lang nghe topic: $topicStatus ...\n";
 
-// Đăng ký topic
 $topics[$topicStatus] = array("qos" => 0, "function" => "procMsg");
 $mqtt->subscribe($topics, 0);
 
-// Vòng lặp lắng nghe tin nhắn
 while($mqtt->proc()){
-    
+    // Vòng lặp lắng nghe
 }
 
 $mqtt->close();
 
-// Hàm xử lý khi có tin nhắn mới
 function procMsg($topic, $msg){
-    global $sensorDataCollection; // Gọi biến collection từ db.php
+    global $sensorDataCollection; 
     
-    echo "Nhận tin nhắn [$topic]: $msg\n";
-    
+    echo "Nhan du lieu: $msg\n";
     $data = json_decode($msg, true);
     
     if ($data) {
-        // Thêm timestamp chuẩn MongoDB
+        // Thêm timestamp
         $data['timestamp'] = new MongoDB\BSON\UTCDateTime();
         
-        // Chèn vào MongoDB
         try {
             $sensorDataCollection->insertOne($data);
-            echo "-> Đã lưu vào MongoDB thành công!\n";
+            echo "-> Da luu vao MongoDB.\n";
         } catch (Exception $e) {
-            echo "-> Lỗi lưu DB: " . $e->getMessage() . "\n";
+            echo "-> Loi MongoDB: " . $e->getMessage() . "\n";
         }
-    } else {
-        echo "-> Dữ liệu không phải JSON hợp lệ.\n";
     }
 }
 ?>

@@ -7,7 +7,7 @@
 const char* ssid = "Galaxy"; 
 const char* password = "12345689"; 
 
-const char* mqtt_server = "960ad71ccaee46b19a2886a5c3551ee6.s1.eu.hivemq.cloud"; 
+const char* mqtt_server = "18597cd464464ab4b3c1c5d4bf9b070e.s1.eu.hivemq.cloud"; 
 const int mqtt_port = 8883;
 const char* mqtt_user = "dodanhtoan"; 
 const char* mqtt_pass = "Toan0809"; 
