@@ -1,6 +1,10 @@
 {
-    "require": {
-        "php-mqtt/client": "^2.3",
-        "mongodb/mongodb": "^2.1"
+  "require": {
+    "mongodb/mongodb": "^1.15"
+  },
+  "config": {
+    "allow-plugins": {
+      "php-http/discovery": true
     }
+  }
 }
