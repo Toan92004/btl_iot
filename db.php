@@ -41,6 +41,7 @@ try {
     // $client->selectDatabase('admin')->command(['ping' => 1]);
     // echo "Kết nối MongoDB Atlas thành công!";
     $sensorDataCollection = $database->sensor_data;
+    $actionLogCollection = $database->action_logs;
 } catch (Exception $e) {
     die("Lỗi kết nối MongoDB Atlas: " . $e->getMessage());
 }
