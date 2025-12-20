@@ -8,33 +8,30 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 require 'db.php'; 
-require 'phpMQTT.php'; // Gọi thư viện MQTT
+require 'phpMQTT.php'; 
 use Bluerhinos\phpMQTT; 
 
 // --- XỬ LÝ KHI NGƯỜI DÙNG BẤM NÚT ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['btn_action'])) {
     
-    $command_code = $_POST['btn_action']; // Lấy mã lệnh (Ví dụ: 'O', 'F', '3'...)
-    $device_name  = $_POST['device_name']; // Tên thiết bị (LED/FAN)
-    $action_text  = $_POST['action_text']; // Tên hành động để lưu log (Bật, Tắt...)
+    $command_code = $_POST['btn_action']; 
+    $device_name  = $_POST['device_name']; 
+    $action_text  = $_POST['action_text']; 
 
-    // Cấu hình MQTT (Giống worker.php)
     $server   = '18597cd464464ab4b3c1c5d4bf9b070e.s1.eu.hivemq.cloud';
     $port     = 8883;
     $username = 'dodanhtoan'; 
     $password = 'Toan0809';
     $clientId = 'Web_Control_' . uniqid();
-    $cafile   = '/etc/ssl/certs/ca-certificates.crt'; // Chứng chỉ SSL trên Render
+    $cafile   = '/etc/ssl/certs/ca-certificates.crt'; 
 
     try {
         $mqtt = new phpMQTT($server, $port, $clientId, $cafile);
         
         if ($mqtt->connect(true, null, $username, $password)) {
-            // Gửi lệnh vào topic Client
             $mqtt->publish("esp8266/client", $command_code, 0);
             $mqtt->close();
 
-            // Lưu lịch sử thao tác vào MongoDB
             $actionLogCollection->insertOne([
                 'username'  => $_SESSION['fullname'],
                 'device'    => $device_name,
@@ -52,10 +49,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['btn_action'])) {
     }
 }
 
-// --- LẤY DỮ LIỆU CẢM BIẾN MỚI NHẤT ---
+// --- LẤY DỮ LIỆU MỚI NHẤT ---
 $latestData = $sensorDataCollection->findOne([], ['sort' => ['timestamp' => -1]]);
 
-$temp = 0; $hum = 0; $motion = 0; $led = 0; $fan = 0; $fan_pwm = 0; $mode = "Unknown";
+// Giá trị mặc định
+$temp = 0; $hum = 0; $motion = 0; $led = 0; $fan = 0; $fan_pwm = 0; 
+$fan_mode = "Auto"; $led_mode = "Auto"; // Tách riêng 2 biến chế độ
 $created_at = "Chưa có dữ liệu";
 
 if ($latestData) {
@@ -65,7 +64,10 @@ if ($latestData) {
     $led  = $latestData['led_state'] ?? 0;
     $fan_pwm = $latestData['fan_pwm'] ?? 0;
     $fan  = ($fan_pwm > 0) ? 1 : 0;
-    $mode = $latestData['fan_mode'] ?? "AUTO"; 
+    
+    // Tách riêng chế độ
+    $fan_mode = $latestData['fan_mode'] ?? "Auto"; 
+    $led_mode = $latestData['led_mode'] ?? "Auto"; 
     
     if (isset($latestData['timestamp'])) {
         $created_at = $latestData['timestamp']->toDateTime()->format('H:i:s d/m/Y');
@@ -87,7 +89,10 @@ if ($latestData) {
         body { background-color: #f4f6f9; }
         .card { border: none; box-shadow: 0 4px 8px rgba(0,0,0,0.1); border-radius: 15px; }
         .sensor-val { font-size: 2.5rem; font-weight: bold; }
-        .status-badge { font-size: 1rem; padding: 10px 20px; border-radius: 20px; }
+        .status-badge { font-size: 0.9rem; padding: 5px 15px; border-radius: 20px; }
+        .mode-badge { font-size: 0.8rem; padding: 5px 10px; border-radius: 5px; font-weight: bold; text-transform: uppercase; }
+        .mode-auto { background-color: #6f42c1; color: white; } /* Màu tím cho Auto */
+        .mode-manual { background-color: #6c757d; color: white; } /* Màu xám cho Manual */
         .btn-control { width: 100%; margin-bottom: 5px; font-weight: bold; }
     </style>
 </head>
@@ -104,12 +109,8 @@ if ($latestData) {
             </div>
         </div>
         
-        <?php if(isset($msg_success)): ?>
-            <div class="alert alert-success"><?php echo $msg_success; ?></div>
-        <?php endif; ?>
-        <?php if(isset($msg_error)): ?>
-            <div class="alert alert-danger"><?php echo $msg_error; ?></div>
-        <?php endif; ?>
+        <?php if(isset($msg_success)): ?><div class="alert alert-success"><?php echo $msg_success; ?></div><?php endif; ?>
+        <?php if(isset($msg_error)): ?><div class="alert alert-danger"><?php echo $msg_error; ?></div><?php endif; ?>
 
         <p class="text-center text-muted">Cập nhật lần cuối: <?php echo $created_at; ?></p>
 
@@ -151,7 +152,12 @@ if ($latestData) {
         <div class="row">
             <div class="col-md-6 mb-4">
                 <div class="card h-100">
-                    <div class="card-header bg-warning text-dark fw-bold"><i class="fas fa-lightbulb"></i> ĐIỀU KHIỂN ĐÈN LED</div>
+                    <div class="card-header bg-warning text-dark fw-bold d-flex justify-content-between align-items-center">
+                        <span><i class="fas fa-lightbulb"></i> ĐIỀU KHIỂN ĐÈN LED</span>
+                        <span class="mode-badge <?php echo ($led_mode == 'Auto') ? 'mode-auto' : 'mode-manual'; ?>">
+                            <?php echo $led_mode; ?>
+                        </span>
+                    </div>
                     <div class="card-body text-center">
                         <div class="mb-3">
                             <?php if ($led == 1): ?>
@@ -178,7 +184,12 @@ if ($latestData) {
 
             <div class="col-md-6 mb-4">
                 <div class="card h-100">
-                    <div class="card-header bg-success text-white fw-bold"><i class="fas fa-fan"></i> ĐIỀU KHIỂN QUẠT</div>
+                    <div class="card-header bg-success text-white fw-bold d-flex justify-content-between align-items-center">
+                        <span><i class="fas fa-fan"></i> ĐIỀU KHIỂN QUẠT</span>
+                        <span class="mode-badge <?php echo ($fan_mode == 'Auto') ? 'mode-auto' : 'mode-manual'; ?>">
+                            <?php echo $fan_mode; ?>
+                        </span>
+                    </div>
                     <div class="card-body text-center">
                         <div class="mb-3">
                             <?php if ($fan == 1): ?>
@@ -186,7 +197,6 @@ if ($latestData) {
                             <?php else: ?>
                                 <span class="badge bg-secondary status-badge">ĐANG TẮT</span>
                             <?php endif; ?>
-                            <div class="mt-2 text-muted">Chế độ hiện tại: <strong><?php echo $mode; ?></strong></div>
                         </div>
 
                         <div class="row g-2">
@@ -201,21 +211,21 @@ if ($latestData) {
                                 <form method="POST">
                                     <input type="hidden" name="device_name" value="FAN">
                                     <input type="hidden" name="action_text" value="MỨC 1">
-                                    <button type="submit" name="btn_action" value="3" class="btn btn-outline-success btn-control">CẤP 1</button>
+                                    <button type="submit" name="btn_action" value="3" class="btn btn-outline-success btn-control">LV 1</button>
                                 </form>
                             </div>
                             <div class="col-3">
                                 <form method="POST">
                                     <input type="hidden" name="device_name" value="FAN">
                                     <input type="hidden" name="action_text" value="MỨC 2">
-                                    <button type="submit" name="btn_action" value="6" class="btn btn-outline-success btn-control">CẤP 2</button>
+                                    <button type="submit" name="btn_action" value="6" class="btn btn-outline-success btn-control">LV 2</button>
                                 </form>
                             </div>
                             <div class="col-3">
                                 <form method="POST">
                                     <input type="hidden" name="device_name" value="FAN">
                                     <input type="hidden" name="action_text" value="MỨC 3">
-                                    <button type="submit" name="btn_action" value="9" class="btn btn-outline-success btn-control">CẤP 3</button>
+                                    <button type="submit" name="btn_action" value="9" class="btn btn-outline-success btn-control">LV 3</button>
                                 </form>
                             </div>
                         </div>
