@@ -1,32 +1,70 @@
 <?php
-session_start(); // 1. BẮT BUỘC CÓ DÒNG NÀY ĐẦU TIÊN
+session_start(); 
 
-// Kiểm tra nếu chưa đăng nhập thì đẩy về trang login
+// 1. Kiểm tra đăng nhập
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit;
 }
 
-require 'db.php'; // Gọi file kết nối MongoDB
+require 'db.php'; 
+require 'phpMQTT.php'; // Gọi thư viện MQTT
+use Bluerhinos\phpMQTT; 
 
-// LẤY DỮ LIỆU CẢM BIẾN MỚI NHẤT
-$latestData = $sensorDataCollection->findOne([], [
-    'sort' => ['timestamp' => -1]
-]);
+// --- XỬ LÝ KHI NGƯỜI DÙNG BẤM NÚT ---
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['btn_action'])) {
+    
+    $command_code = $_POST['btn_action']; // Lấy mã lệnh (Ví dụ: 'O', 'F', '3'...)
+    $device_name  = $_POST['device_name']; // Tên thiết bị (LED/FAN)
+    $action_text  = $_POST['action_text']; // Tên hành động để lưu log (Bật, Tắt...)
 
-// Khởi tạo giá trị mặc định
-$temp = 0; $hum = 0; $motion = 0;
-$led = 0; $fan = 0; $mode = "Unknown";
+    // Cấu hình MQTT (Giống worker.php)
+    $server   = '18597cd464464ab4b3c1c5d4bf9b070e.s1.eu.hivemq.cloud';
+    $port     = 8883;
+    $username = 'dodanhtoan'; 
+    $password = 'Toan0809';
+    $clientId = 'Web_Control_' . uniqid();
+    $cafile   = '/etc/ssl/certs/ca-certificates.crt'; // Chứng chỉ SSL trên Render
+
+    try {
+        $mqtt = new phpMQTT($server, $port, $clientId, $cafile);
+        
+        if ($mqtt->connect(true, null, $username, $password)) {
+            // Gửi lệnh vào topic Client
+            $mqtt->publish("esp8266/client", $command_code, 0);
+            $mqtt->close();
+
+            // Lưu lịch sử thao tác vào MongoDB
+            $actionLogCollection->insertOne([
+                'username'  => $_SESSION['fullname'],
+                'device'    => $device_name,
+                'command'   => $action_text,
+                'payload'   => $command_code,
+                'timestamp' => new MongoDB\BSON\UTCDateTime()
+            ]);
+
+            $msg_success = "Đã gửi lệnh: $action_text cho $device_name";
+        } else {
+            $msg_error = "Không thể kết nối tới MQTT Broker!";
+        }
+    } catch (Exception $e) {
+        $msg_error = "Lỗi: " . $e->getMessage();
+    }
+}
+
+// --- LẤY DỮ LIỆU CẢM BIẾN MỚI NHẤT ---
+$latestData = $sensorDataCollection->findOne([], ['sort' => ['timestamp' => -1]]);
+
+$temp = 0; $hum = 0; $motion = 0; $led = 0; $fan = 0; $fan_pwm = 0; $mode = "Unknown";
 $created_at = "Chưa có dữ liệu";
 
 if ($latestData) {
     $temp = $latestData['temp'] ?? 0;
-    $hum = $latestData['hum'] ?? 0;
+    $hum  = $latestData['hum'] ?? 0;
     $motion = $latestData['pir'] ?? 0;
-    $led = $latestData['led_state'] ?? 0;
-    
+    $led  = $latestData['led_state'] ?? 0;
     $fan_pwm = $latestData['fan_pwm'] ?? 0;
-    $fan = ($fan_pwm > 0) ? 1 : 0;
+    $fan  = ($fan_pwm > 0) ? 1 : 0;
     $mode = $latestData['fan_mode'] ?? "AUTO"; 
     
     if (isset($latestData['timestamp'])) {
@@ -41,15 +79,16 @@ if ($latestData) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hệ Thống Giám Sát IoT</title>
-    <meta http-equiv="refresh" content="5">
+    <meta http-equiv="refresh" content="5"> 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     
     <style>
         body { background-color: #f4f6f9; }
-        .card { border: none; shadow: 0 4px 8px rgba(0,0,0,0.1); border-radius: 15px; }
+        .card { border: none; box-shadow: 0 4px 8px rgba(0,0,0,0.1); border-radius: 15px; }
         .sensor-val { font-size: 2.5rem; font-weight: bold; }
         .status-badge { font-size: 1rem; padding: 10px 20px; border-radius: 20px; }
+        .btn-control { width: 100%; margin-bottom: 5px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -59,31 +98,30 @@ if ($latestData) {
                 <h2 class="text-primary fw-bold m-0">BẢNG ĐIỀU KHIỂN IOT</h2>
                 <small class="text-muted">Xin chào, <strong><?php echo $_SESSION['fullname'] ?? 'Admin'; ?></strong></small>
             </div>
-            
             <div>
-                <a href="history.php" class="btn btn-outline-primary me-2">
-                    <i class="fas fa-history"></i> Lịch Sử
-                </a>
-                
-                <a href="logout.php" class="btn btn-danger" onclick="return confirm('Bạn có chắc muốn đăng xuất?');">
-                    <i class="fas fa-sign-out-alt"></i> Đăng xuất
-                </a>
+                <a href="history.php" class="btn btn-outline-primary me-2"><i class="fas fa-history"></i> Lịch Sử</a>
+                <a href="logout.php" class="btn btn-danger" onclick="return confirm('Bạn có chắc muốn đăng xuất?');"><i class="fas fa-sign-out-alt"></i> Đăng xuất</a>
             </div>
         </div>
         
+        <?php if(isset($msg_success)): ?>
+            <div class="alert alert-success"><?php echo $msg_success; ?></div>
+        <?php endif; ?>
+        <?php if(isset($msg_error)): ?>
+            <div class="alert alert-danger"><?php echo $msg_error; ?></div>
+        <?php endif; ?>
+
         <p class="text-center text-muted">Cập nhật lần cuối: <?php echo $created_at; ?></p>
 
         <div class="row mb-4">
             <div class="col-12">
                 <?php if ($motion == 1): ?>
                     <div class="alert alert-danger text-center fw-bold" role="alert">
-                        <i class="fas fa-exclamation-triangle fa-2x"></i><br>
-                        CẢNH BÁO: PHÁT HIỆN CÓ NGƯỜI!
+                        <i class="fas fa-exclamation-triangle fa-2x"></i><br> CẢNH BÁO: PHÁT HIỆN CÓ NGƯỜI!
                     </div>
                 <?php else: ?>
                     <div class="alert alert-success text-center" role="alert">
-                        <i class="fas fa-shield-alt fa-2x"></i><br>
-                        An toàn: Không phát hiện chuyển động.
+                        <i class="fas fa-shield-alt fa-2x"></i><br> An toàn: Không phát hiện chuyển động.
                     </div>
                 <?php endif; ?>
             </div>
@@ -111,44 +149,75 @@ if ($latestData) {
         </div>
 
         <div class="row">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header bg-dark text-white">
-                        <i class="fas fa-cogs"></i> Trạng thái thiết bị
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header bg-warning text-dark fw-bold"><i class="fas fa-lightbulb"></i> ĐIỀU KHIỂN ĐÈN LED</div>
+                    <div class="card-body text-center">
+                        <div class="mb-3">
+                            <?php if ($led == 1): ?>
+                                <span class="badge bg-warning text-dark status-badge"><i class="fas fa-lightbulb"></i> ĐANG BẬT</span>
+                            <?php else: ?>
+                                <span class="badge bg-secondary status-badge">ĐANG TẮT</span>
+                            <?php endif; ?>
+                        </div>
+                        <div class="d-flex gap-2 justify-content-center">
+                            <form method="POST" style="width: 45%;">
+                                <input type="hidden" name="device_name" value="LED">
+                                <input type="hidden" name="action_text" value="BẬT">
+                                <button type="submit" name="btn_action" value="O" class="btn btn-warning btn-control">BẬT</button>
+                            </form>
+                            <form method="POST" style="width: 45%;">
+                                <input type="hidden" name="device_name" value="LED">
+                                <input type="hidden" name="action_text" value="TẮT">
+                                <button type="submit" name="btn_action" value="f" class="btn btn-secondary btn-control">TẮT</button>
+                            </form>
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <div class="row text-center align-items-center">
-                            
-                            <div class="col-md-4 mb-3">
-                                <h5>ĐÈN LED</h5>
-                                <?php if ($led == 1): ?>
-                                    <span class="badge bg-warning text-dark status-badge">
-                                        <i class="fas fa-lightbulb"></i> ĐANG BẬT
-                                    </span>
-                                <?php else: ?>
-                                    <span class="badge bg-secondary status-badge">ĐANG TẮT</span>
-                                <?php endif; ?>
-                            </div>
+                </div>
+            </div>
 
-                            <div class="col-md-4 mb-3">
-                                <h5>QUẠT LÀM MÁT</h5>
-                                <?php if ($fan == 1): ?>
-                                    <span class="badge bg-success status-badge">
-                                        <i class="fas fa-fan fa-spin"></i> ĐANG BẬT
-                                    </span>
-                                    <p class="mt-2 text-muted small">Tốc độ: <?php echo $fan_pwm; ?>%</p>
-                                <?php else: ?>
-                                    <span class="badge bg-secondary status-badge">ĐANG TẮT</span>
-                                <?php endif; ?>
-                            </div>
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header bg-success text-white fw-bold"><i class="fas fa-fan"></i> ĐIỀU KHIỂN QUẠT</div>
+                    <div class="card-body text-center">
+                        <div class="mb-3">
+                            <?php if ($fan == 1): ?>
+                                <span class="badge bg-success status-badge"><i class="fas fa-fan fa-spin"></i> ĐANG BẬT (<?php echo $fan_pwm; ?>%)</span>
+                            <?php else: ?>
+                                <span class="badge bg-secondary status-badge">ĐANG TẮT</span>
+                            <?php endif; ?>
+                            <div class="mt-2 text-muted">Chế độ hiện tại: <strong><?php echo $mode; ?></strong></div>
+                        </div>
 
-                            <div class="col-md-4 mb-3">
-                                <h5>CHẾ ĐỘ HỆ THỐNG</h5>
-                                <div class="p-2 border rounded bg-light">
-                                    <strong><?php echo strtoupper($mode); ?></strong>
-                                </div>
+                        <div class="row g-2">
+                            <div class="col-3">
+                                <form method="POST">
+                                    <input type="hidden" name="device_name" value="FAN">
+                                    <input type="hidden" name="action_text" value="TẮT">
+                                    <button type="submit" name="btn_action" value="F" class="btn btn-outline-danger btn-control">OFF</button>
+                                </form>
                             </div>
-
+                            <div class="col-3">
+                                <form method="POST">
+                                    <input type="hidden" name="device_name" value="FAN">
+                                    <input type="hidden" name="action_text" value="MỨC 1">
+                                    <button type="submit" name="btn_action" value="3" class="btn btn-outline-success btn-control">CẤP 1</button>
+                                </form>
+                            </div>
+                            <div class="col-3">
+                                <form method="POST">
+                                    <input type="hidden" name="device_name" value="FAN">
+                                    <input type="hidden" name="action_text" value="MỨC 2">
+                                    <button type="submit" name="btn_action" value="6" class="btn btn-outline-success btn-control">CẤP 2</button>
+                                </form>
+                            </div>
+                            <div class="col-3">
+                                <form method="POST">
+                                    <input type="hidden" name="device_name" value="FAN">
+                                    <input type="hidden" name="action_text" value="MỨC 3">
+                                    <button type="submit" name="btn_action" value="9" class="btn btn-outline-success btn-control">CẤP 3</button>
+                                </form>
+                            </div>
                         </div>
                     </div>
                 </div>

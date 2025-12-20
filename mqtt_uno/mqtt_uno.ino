@@ -28,9 +28,10 @@ const unsigned long dhtInterval = 2000;
 unsigned long lastLogicRunTime = 0;
 const unsigned long logicInterval = 500; 
 
-// Logic độ trễ Auto
+// --- CẤU HÌNH THỜI GIAN TRỄ (BẠN CHỈNH Ở ĐÂY) ---
 unsigned long fanOffTime = 0; 
-const unsigned long autoDelayTime = 5000; 
+unsigned long ledManualTime = 0; // [MỚI] Biến đếm giờ cho LED
+const unsigned long autoDelayTime = 10000; // [SỬA] Tăng lên 10000ms = 10 giây
 
 // Trạng thái thiết bị
 int btn1State = 0; 
@@ -44,11 +45,11 @@ bool isLedAuto = true;
 
 // Dữ liệu cảm biến
 float currentTemperature = 0.0;
-float currentHumidity = 0.0; // Thêm độ ẩm
-bool isPersonDetected = false; // Thêm trạng thái người
+float currentHumidity = 0.0; 
+bool isPersonDetected = false; 
 
 // Ngưỡng nhiệt độ
-const float FAN_TEMP_30 = 28.0; // Chỉnh lại cho thực tế chút
+const float FAN_TEMP_30 = 28.0; 
 const float FAN_TEMP_33 = 30.0;
 const float FAN_TEMP_36 = 32.0;
 const float FIRE_ALERT_TEMP = 50.0;
@@ -85,7 +86,7 @@ void readSensors() {
     if (!isnan(t)) currentTemperature = t;
     if (!isnan(h)) currentHumidity = h;
 
-    isPersonDetected = digitalRead(PIR_PIN); // Đọc PIR
+    isPersonDetected = digitalRead(PIR_PIN); 
 }
 
 // --- LOGIC TỰ ĐỘNG ---
@@ -103,7 +104,7 @@ void handleFanAutoLogic() {
 
 void handleLedAutoLogic() {
     if (!isLedAuto || currentTemperature > FIRE_ALERT_TEMP) return; 
-    bool isDark = digitalRead(LDR_PIN) == HIGH; // Giả sử mức CAO là tối
+    bool isDark = digitalRead(LDR_PIN) == HIGH; 
     if (isDark && isPersonDetected) {
         if (!isLedOn) setLedState(true);
     } else {
@@ -114,7 +115,6 @@ void handleLedAutoLogic() {
 void handleFireAlert() {
     if (currentTemperature > FIRE_ALERT_TEMP) {
         if (isFanOn) setFanSpeed(0);
-        // Chớp LED
         if ((millis() / 200) % 2 == 0) digitalWrite(LED_OUT, HIGH);
         else digitalWrite(LED_OUT, LOW);
     } else if (currentTemperature <= FIRE_ALERT_RESET) { 
@@ -122,12 +122,25 @@ void handleFireAlert() {
     }
 }
 
+// --- [QUAN TRỌNG] HÀM KIỂM TRA THỜI GIAN TRỄ ---
 void periodicTasks() {
+    // 1. Kiểm tra trễ cho QUẠT
     if (!isFanAuto && fanOffTime != 0) {
         if (millis() - fanOffTime >= autoDelayTime) {
             isFanAuto = true; fanOffTime = 0; 
         }
     }
+
+    // 2. [MỚI] Kiểm tra trễ cho LED
+    // Nếu đang chỉnh tay (Manual) và có đặt thời gian
+    if (!isLedAuto && ledManualTime != 0) {
+        // Nếu đã hết thời gian chờ -> Quay về Auto
+        if (millis() - ledManualTime >= autoDelayTime) {
+            isLedAuto = true; 
+            ledManualTime = 0; 
+        }
+    }
+
     handleFireAlert();
     if (currentTemperature <= FIRE_ALERT_TEMP) {
         if (isFanAuto) handleFanAutoLogic();
@@ -165,9 +178,10 @@ void handleBtn2LedPolling() {
         if (currentTemperature <= FIRE_ALERT_TEMP) {
             delay(50);
             if (digitalRead(BTN2_LED_PIN) == LOW) {
-                isLedAuto = false; 
-                setLedState(!isLedOn); 
-                if (!isLedOn) isLedAuto = true; 
+                // [SỬA] Logic nút bấm LED
+                isLedAuto = false;          // Chuyển sang chỉnh tay
+                setLedState(!isLedOn);      // Đảo trạng thái đèn
+                ledManualTime = millis();   // [QUAN TRỌNG] Bắt đầu đếm giờ chờ
             }
         }
     }
@@ -175,29 +189,39 @@ void handleBtn2LedPolling() {
 }
 
 // --- I2C GIAO TIẾP ---
-// Gửi 7 byte dữ liệu sang ESP32
 void requestEvent() {
     byte data[7];
     data[0] = (byte)fanPwmLevel;
     data[1] = isLedOn ? 1 : 0;
-    data[2] = (byte)currentTemperature; // Ép kiểu float về int để gửi nhanh
-    data[3] = (byte)currentHumidity;    // Độ ẩm
-    data[4] = isPersonDetected ? 1 : 0; // Có người hay không
-    data[5] = isFanAuto ? 1 : 0;        // Chế độ Quạt
-    data[6] = isLedAuto ? 1 : 0;        // Chế độ LED
-    
+    data[2] = (byte)currentTemperature; 
+    data[3] = (byte)currentHumidity;    
+    data[4] = isPersonDetected ? 1 : 0; 
+    data[5] = isFanAuto ? 1 : 0;        
+    data[6] = isLedAuto ? 1 : 0;        
     Wire.write(data, 7);
 }
 
 void receiveEvent(int byteCount) {
     if (byteCount > 0) {
         char cmd = Wire.read();
+        
+        // Nhận lệnh từ ESP32
         if (cmd == 'F') { setFanSpeed(0); btn1State = 0; isFanAuto = false; }
         else if (cmd == '3') { setFanSpeed(30); btn1State = 1; isFanAuto = false; }
         else if (cmd == '6') { setFanSpeed(60); btn1State = 2; isFanAuto = false; }
         else if (cmd == '9') { setFanSpeed(90); btn1State = 3; isFanAuto = false; }
-        else if (cmd == 'O') { setLedState(true); isLedAuto = false; }
-        else if (cmd == 'f') { setLedState(false); isLedAuto = false; }
+        
+        // Điều khiển LED từ Web
+        else if (cmd == 'O') { 
+            setLedState(true); 
+            isLedAuto = false; 
+            ledManualTime = millis(); // [MỚI] Cũng kích hoạt đếm giờ khi chỉnh từ Web
+        }
+        else if (cmd == 'f') { 
+            setLedState(false); 
+            isLedAuto = false; 
+            ledManualTime = millis(); // [MỚI]
+        }
         
         if (!isFanAuto && cmd == 'F') fanOffTime = millis();
     }
