@@ -70,10 +70,10 @@ function procMsg($topic, $msg){
     
     if ($data) {
         // 1. Kiểm tra xem dữ liệu có thay đổi đáng kể không?
-        // Ví dụ: Nhiệt độ lệch > 0.3 độ, hoặc trạng thái Fan/Led thay đổi
+        // Ví dụ: Nhiệt độ lệch > 1.0 độ, hoặc trạng thái Fan/Led thay đổi
         $is_changed = false;
 
-        if (abs($data['temp'] - $last_temp) > 0.3) $is_changed = true;
+        if (abs($data['temp'] - $last_temp) > 1.0) $is_changed = true;
         if ($data['fan_pwm'] != $last_fan_pwm) $is_changed = true;
         if ($data['led_state'] != $last_led_state) $is_changed = true;
         if ($data['pir'] == 1) $is_changed = true; // Có người là phải lưu ngay
