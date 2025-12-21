@@ -156,15 +156,26 @@ $userLogs = $actionLogCollection->find($filterLogs, ['limit' => 100, 'sort' => [
                             <th class="p-3 border">Mode LED</th>
                         </tr>
                     </thead>
+                    
                     <tbody>
                         <?php foreach ($sensorData as $doc): ?>
                         <tr class="border-b hover:bg-green-50 transition">
                             <td class="p-3 text-gray-600"><?= $doc['timestamp']->toDateTime()->format('H:i:s d/m/Y') ?></td>
-                            <td class="p-3 font-bold text-red-600"><?= $doc['temp'] ?> °C</td>
-                            <td class="p-3 font-bold text-blue-600"><?= $doc['hum'] ?> %</td>
-                            <td class="p-3"><?= (isset($doc['pir']) && $doc['pir'] == 1) ? '<span class="text-red-600 font-bold">⚠️ CÓ</span>' : 'Không' ?></td>
-                            <td class="p-3 text-green-600 font-bold"><?= ($doc['fan_pwm'] > 0) ? $doc['fan_pwm'].'%' : 'Off' ?></td>
-                            <td class="p-3"><?= ($doc['led_state'] == 1) ? '<span class="text-yellow-600 font-bold">Bật</span>' : 'Tắt' ?></td>
+                            
+                            <td class="p-3 font-bold text-red-600"><?= $doc['temp'] ?? 0 ?> °C</td>
+                            <td class="p-3 font-bold text-blue-600"><?= $doc['hum'] ?? 0 ?> %</td>
+                            
+                            <td class="p-3">
+                                <?= (isset($doc['pir']) && $doc['pir'] == 1) ? '<span class="text-red-600 font-bold">⚠️ CÓ</span>' : 'Không' ?>
+                            </td>
+                            
+                            <td class="p-3 text-green-600 font-bold">
+                                <?= (($doc['fan_pwm'] ?? 0) > 0) ? ($doc['fan_pwm'] ?? 0).'%' : 'Off' ?>
+                            </td>
+                            
+                            <td class="p-3">
+                                <?= (($doc['led_state'] ?? 0) == 1) ? '<span class="text-yellow-600 font-bold">Bật</span>' : 'Tắt' ?>
+                            </td>
                             
                             <td class="p-3">
                                 <span class="text-xs px-2 py-1 rounded font-bold <?= ($doc['fan_mode'] ?? '') == 'Auto' ? 'bg-purple-100 text-purple-700' : 'bg-gray-200 text-gray-700' ?>">
@@ -180,6 +191,7 @@ $userLogs = $actionLogCollection->find($filterLogs, ['limit' => 100, 'sort' => [
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
+                    
                 </table>
             </div>
         </div>
